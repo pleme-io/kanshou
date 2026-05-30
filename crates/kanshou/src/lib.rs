@@ -78,6 +78,7 @@
 #![doc(html_root_url = "https://docs.rs/kanshou/0.1.0")]
 
 pub mod client;
+pub mod mcp;
 pub mod path;
 pub mod server;
 pub mod types;
