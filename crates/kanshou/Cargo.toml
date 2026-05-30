@@ -1,0 +1,36 @@
+[package]
+name = "kanshou"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Kanshou (観照) — live process introspection over Unix sockets. Every pleme-io binary exposes its typed AppState; MCP servers and operator tools forward queries through it."
+readme = "../../README.md"
+documentation = "https://docs.rs/kanshou"
+categories = ["development-tools::debugging", "asynchronous"]
+keywords = ["introspection", "ipc", "unix-socket", "mcp", "pleme-io"]
+
+[lints]
+workspace = true
+
+[features]
+default = ["derive"]
+# Re-export `#[derive(Introspect)]` from kanshou-derive. Enabled by
+# default so the common consumer shape (`use kanshou::Introspect;
+# #[derive(Introspect)] struct …`) works out of the box.
+derive = ["dep:kanshou-derive"]
+
+[dependencies]
+tokio = { version = "1", features = ["net", "io-util", "sync", "rt", "macros", "time"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+tracing = "0.1"
+kanshou-derive = { version = "0.1.0", path = "../kanshou-derive", optional = true }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["full"] }
+tempfile = "3"

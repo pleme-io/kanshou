@@ -1,0 +1,22 @@
+[package]
+name = "kanshou-derive"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+homepage.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Derive macro for `kanshou::Introspect`. Re-exported by `kanshou` under the `derive` feature; depend on `kanshou` directly rather than this crate."
+documentation = "https://docs.rs/kanshou-derive"
+
+[lib]
+proc-macro = true
+
+[lints]
+workspace = true
+
+[dependencies]
+syn = { version = "2", features = ["full"] }
+quote = "1"
+proc-macro2 = "1"

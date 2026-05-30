@@ -85,3 +85,6 @@ pub mod types;
 pub use client::{discover, Client, DiscoveredInstance};
 pub use server::Server;
 pub use types::{Introspect, Query, QueryError, QueryResult};
+
+#[cfg(feature = "derive")]
+pub use kanshou_derive::Introspect;
