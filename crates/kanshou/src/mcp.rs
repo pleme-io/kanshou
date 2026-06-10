@@ -25,21 +25,28 @@ pub async fn forward<F>(app_name: &str, q: &Query, fallback: F) -> QueryResult
 where
     F: FnOnce() -> QueryResult,
 {
-    let Some(target) = pick_most_recent(app_name) else {
-        return fallback();
-    };
-    match connect_and_query(&target.socket_path, q).await {
-        Ok(result) => result,
-        Err(e) => {
-            tracing::debug!(
-                target = %target.app_name,
-                pid = target.pid,
-                error = ?e,
-                "kanshou forward failed; using fallback"
-            );
-            fallback()
+    // Try EVERY discovered socket in most-recent-first order, not just the
+    // single newest. Sockets outlive their processes (a crashed/killed GUI
+    // leaves its mado-<pid>.sock behind), so single-pick meant one stale
+    // socket hid every LIVE instance behind it — the MCP server reported
+    // {"count":0} with a healthy GUI running (incident 2026-06-10; found
+    // while building the L2 e2e harness, which depends on this path).
+    let mut all = discover(Some(app_name));
+    all.sort_by_key(|i| std::cmp::Reverse(i.pid));
+    for target in all {
+        match connect_and_query(&target.socket_path, q).await {
+            Ok(result) => return result,
+            Err(e) => {
+                tracing::debug!(
+                    target = %target.app_name,
+                    pid = target.pid,
+                    error = ?e,
+                    "kanshou socket unreachable (stale?); trying next"
+                );
+            }
         }
     }
+    fallback()
 }
 
 /// Like [`forward`] but targets a specific PID. Returns the fallback
@@ -58,12 +65,6 @@ where
         },
         None => fallback(),
     }
-}
-
-fn pick_most_recent(app_name: &str) -> Option<DiscoveredInstance> {
-    let mut all = discover(Some(app_name));
-    all.sort_by_key(|i| std::cmp::Reverse(i.pid));
-    all.into_iter().next()
 }
 
 async fn connect_and_query(socket: &Path, q: &Query) -> std::io::Result<QueryResult> {
@@ -92,30 +93,38 @@ pub async fn forward_status<F>(
 where
     F: FnOnce() -> QueryResult,
 {
-    let Some(target) = pick_most_recent(app_name) else {
-        return match fallback() {
-            Ok(value) => ForwardOutcome::Fallback { value },
-            Err(error) => ForwardOutcome::LiveError {
-                pid: 0,
-                error,
-            },
-        };
-    };
-    match connect_and_query(&target.socket_path, q).await {
-        Ok(Ok(value)) => ForwardOutcome::Live {
-            pid: target.pid,
-            value,
-        },
-        Ok(Err(error)) => ForwardOutcome::LiveError {
-            pid: target.pid,
+    // Same stale-socket retry discipline as [`forward`]: walk every
+    // discovered socket newest-first; the first that CONNECTS wins.
+    let mut all = discover(Some(app_name));
+    all.sort_by_key(|i| std::cmp::Reverse(i.pid));
+    for target in all {
+        match connect_and_query(&target.socket_path, q).await {
+            Ok(Ok(value)) => {
+                return ForwardOutcome::Live {
+                    pid: target.pid,
+                    value,
+                }
+            }
+            Ok(Err(error)) => {
+                return ForwardOutcome::LiveError {
+                    pid: target.pid,
+                    error,
+                }
+            }
+            Err(e) => {
+                tracing::debug!(
+                    pid = target.pid,
+                    error = ?e,
+                    "kanshou socket unreachable (stale?); trying next"
+                );
+            }
+        }
+    }
+    match fallback() {
+        Ok(value) => ForwardOutcome::Fallback { value },
+        Err(error) => ForwardOutcome::LiveError {
+            pid: 0,
             error,
-        },
-        Err(_) => match fallback() {
-            Ok(value) => ForwardOutcome::Fallback { value },
-            Err(error) => ForwardOutcome::LiveError {
-                pid: target.pid,
-                error,
-            },
         },
     }
 }
