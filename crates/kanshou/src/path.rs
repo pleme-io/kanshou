@@ -11,6 +11,14 @@ use std::path::PathBuf;
 /// The directory is created on demand; existing dir + perms preserved.
 #[must_use]
 pub fn socket_dir() -> PathBuf {
+    // Test/CI hermeticity seam: a process that must never discover
+    // (or be discovered by) the operator's LIVE instances points this
+    // at a private dir. Without it, a test suite running while the
+    // real GUI is open forwards queries to the operator's session —
+    // the mado mcp_config_get flake class (2026-06-11).
+    if let Some(dir) = std::env::var_os("KANSHOU_SOCKET_DIR") {
+        return PathBuf::from(dir);
+    }
     if cfg!(target_os = "macos") {
         let home = std::env::var_os("HOME").unwrap_or_default();
         let mut p = PathBuf::from(home);
@@ -71,6 +79,17 @@ unsafe fn libc_geteuid() -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn socket_dir_env_override_wins() {
+        unsafe { std::env::set_var("KANSHOU_SOCKET_DIR", "/tmp/kanshou-test-override") };
+        assert_eq!(
+            socket_dir(),
+            std::path::PathBuf::from("/tmp/kanshou-test-override"),
+            "KANSHOU_SOCKET_DIR must take precedence for hermetic tests"
+        );
+        unsafe { std::env::remove_var("KANSHOU_SOCKET_DIR") };
+    }
 
     #[test]
     fn socket_path_format() {
