@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "cargo_lock_sha256": "bdb0bac900bf2d5e42cbda9c094d5f1c259a39086d30fe37c3ced59ef8f9d7c1",
+  "cargo_lock_sha256": "978ccb1d6db2273378e9fe5b01afbdb2ae7620369ec764f995953d54ebfd8f0c",
   "target_resolves": {
     "base": {
       "bitflags-2.11.1": {
@@ -172,11 +172,11 @@
         "build_dependencies": [],
         "features": []
       },
-      "kanshou-0.1.2": {
+      "kanshou-0.1.3": {
         "runtime_dependencies": [
           {
             "name": "kanshou_derive",
-            "package_key": "kanshou-derive-0.1.2",
+            "package_key": "kanshou-derive-0.1.3",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -250,7 +250,7 @@
           "derive"
         ]
       },
-      "kanshou-derive-0.1.2": {
+      "kanshou-derive-0.1.3": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -1703,14 +1703,14 @@
     "itoa-1.0.18": {
       "edition": "2021"
     },
-    "kanshou-0.1.2": {
+    "kanshou-0.1.3": {
       "edition": "2024",
       "lib_target": {
         "name": "kanshou",
         "path": "src/lib.rs"
       }
     },
-    "kanshou-derive-0.1.2": {
+    "kanshou-derive-0.1.3": {
       "edition": "2024",
       "proc_macro": true,
       "lib_target": {
