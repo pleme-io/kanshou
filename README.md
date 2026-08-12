@@ -71,6 +71,33 @@ async fn main() -> anyhow::Result<()> {
 }
 ```
 
+## Exposing a sidecar
+
+One call. Bind, runtime, thread and serve, all non-fatal:
+
+```rust
+if let Some(path) = kanshou::Server::spawn_sidecar("myapp", state) {
+    tracing::info!(socket = %path.display(), "kanshou introspection live");
+}
+```
+
+`Some(path)` means the socket is **bound** — not merely that a thread started.
+`None` means introspection is unavailable and the reason has been logged. There
+is no arm that panics, and that is the point.
+
+Three fleet binaries hand-rolled this block: a named thread, a current-thread
+tokio runtime inside it, `Server::new` + `serve()` under `block_on`. The bodies
+were byte-identical except one log literal — and they still disagreed about the
+thing that matters. All three documented a failed sidecar as non-fatal; two then
+ended the spawn with `.expect(...)`, so under thread-spawn `EAGAIN` — exactly
+when you most want introspection — a missing debug socket panicked a terminal
+and a multiplexer daemon at startup.
+
+The bind happens *inside* the spawned thread and reports back over a channel,
+because `tokio::net::UnixListener::bind` panics outside a runtime. A first draft
+bound eagerly on the calling thread and paniced in every caller; the test caught
+it.
+
 ## Canonical socket path
 
 - macOS: `$HOME/Library/Application Support/kanshou/<app>-<pid>.sock`
