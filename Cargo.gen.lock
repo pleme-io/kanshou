@@ -1,8 +1,8 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "542f60fa33793bf335a618f89be5d8288bd3d5530c36b8babab72473579556e3",
+  "cargo_lock_sha256": "36afb5e21db680a7a57e74ceaa157fd05902acccb7d1bc02e7d8298db807934d",
   "manifest_sha256": {
-    "Cargo.toml": "dba446d87201472ef2cde28d1bd3c64f56030df88e543c92f2a845d000e6e8c4",
+    "Cargo.toml": "80ce1ce86bcaf79a9422915356af84d89bcaa74d19b28806841a27ad6561c70e",
     "crates/kanshou-derive/Cargo.toml": "f81c7592634bd1a5949ea7065c123c972d8fdee0b5096b614b59d45830b39a6c",
     "crates/kanshou/Cargo.toml": "e1c6189ec725efe7107d710f40b4b11a2584bd6ad094949420263ebca98514e2"
   },
@@ -177,11 +177,11 @@
         "build_dependencies": [],
         "features": []
       },
-      "kanshou-0.1.4": {
+      "kanshou-0.1.5": {
         "runtime_dependencies": [
           {
             "name": "kanshou_derive",
-            "package_key": "kanshou-derive-0.1.4",
+            "package_key": "kanshou-derive-0.1.5",
             "kind": "normal",
             "features": [],
             "uses_default_features": true,
@@ -255,7 +255,7 @@
           "derive"
         ]
       },
-      "kanshou-derive-0.1.4": {
+      "kanshou-derive-0.1.5": {
         "runtime_dependencies": [
           {
             "name": "proc_macro2",
@@ -1757,14 +1757,14 @@
     "itoa-1.0.18": {
       "edition": "2021"
     },
-    "kanshou-0.1.4": {
+    "kanshou-0.1.5": {
       "edition": "2024",
       "lib_target": {
         "name": "kanshou",
         "path": "src/lib.rs"
       }
     },
-    "kanshou-derive-0.1.4": {
+    "kanshou-derive-0.1.5": {
       "edition": "2024",
       "proc_macro": true,
       "lib_target": {
