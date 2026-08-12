@@ -59,6 +59,14 @@ pub fn parse_socket_name(name: &str) -> Option<(String, u32)> {
 /// Best-effort `geteuid()` without pulling the `libc` crate. We only
 /// need it on Linux's `/tmp` fallback path; macOS uses `$HOME` and
 /// never reaches here. Returns `None` on Windows / unknown.
+// clippy's `unnecessary_wraps` is CFG-BLIND here: it lints against the
+// `#[cfg(unix)]` arm alone, where the value is indeed always `Some`. The
+// `#[cfg(not(unix))]` arm below returns `None`, so the Option is the whole
+// point — unwrapping it would compile on this machine and break Windows.
+#[allow(
+    clippy::unnecessary_wraps,
+    reason = "None on the non-unix arm; clippy only sees the cfg(unix) body"
+)]
 unsafe fn libc_geteuid() -> Option<u32> {
     #[cfg(unix)]
     {

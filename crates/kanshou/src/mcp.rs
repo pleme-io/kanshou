@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use crate::client::{discover, Client, DiscoveredInstance};
+use crate::client::{discover, Client};
 use crate::types::{Query, QueryError, QueryResult};
 
 /// Discover the most-recent live consumer of `app_name`, ship the

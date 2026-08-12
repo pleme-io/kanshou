@@ -27,7 +27,7 @@
 //!
 //! - macOS: `$HOME/Library/Application Support/kanshou/<app>-<pid>.sock`
 //! - linux: `$XDG_RUNTIME_DIR/kanshou/<app>-<pid>.sock`
-//!   (falls back to `/tmp/kanshou-<uid>` if XDG_RUNTIME_DIR unset)
+//!   (falls back to `/tmp/kanshou-<uid>` if `XDG_RUNTIME_DIR` unset)
 //!
 //! ## Wire protocol
 //!
