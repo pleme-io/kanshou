@@ -51,6 +51,114 @@ impl<T: Introspect + 'static> Server<T> {
         &self.socket_path
     }
 
+    /// Bind, then run the whole introspection sidecar on its own thread —
+    /// the one call an application needs.
+    ///
+    /// # Why this lives here and not in each application
+    ///
+    /// Three fleet binaries (mado, tear-daemon, frost) each hand-rolled this:
+    /// a named `std::thread`, a current-thread tokio runtime built inside it,
+    /// `Server::new` + `serve()` under `block_on`, and a `pending()` to hold
+    /// the thread open. The three bodies were byte-identical except for one
+    /// log literal — and they still managed to disagree about the thing that
+    /// matters.
+    ///
+    /// All three carried a doc comment promising that a failed sidecar is
+    /// non-fatal ("bind failure is non-fatal — the app runs without the
+    /// socket"). Two of them then ended the spawn with `.expect(...)`. Under
+    /// thread-spawn `EAGAIN` — fd or thread exhaustion, which is exactly when
+    /// you most want introspection — mado and tear-daemon **panicked during
+    /// startup**, turning a missing debug socket into a dead terminal and a
+    /// dead multiplexer daemon. frost, alone, degraded as documented.
+    ///
+    /// This method makes that decision once. **Every failure path here is
+    /// non-fatal by construction**: it returns `None` and logs, and there is
+    /// no arm that can panic. A caller cannot re-introduce the divergence
+    /// because a caller no longer writes the spawn.
+    ///
+    /// # What the return value means
+    ///
+    /// `Some(path)` — the socket is bound and being served on a background
+    /// thread that outlives this call. `None` — introspection is unavailable
+    /// and the reason has been logged. The application continues either way;
+    /// that is the whole contract.
+    ///
+    /// # The bind happens inside the thread, and the result is sent back
+    ///
+    /// `tokio::net::UnixListener::bind` **panics outside a runtime** ("there
+    /// is no reactor running"), so the bind cannot happen on the calling
+    /// thread — which is exactly why all three hand-rolled copies did it
+    /// inside their own runtime. A first draft of this method bound eagerly
+    /// and paniced in every caller; the test below is what caught it.
+    ///
+    /// So the thread binds, reports the outcome back over a channel, and only
+    /// then serves. The calling thread waits for that one message, which is
+    /// why `Some(path)` still means *the socket is bound*, not merely *a
+    /// thread was started*. Callers announce the path as "introspection live",
+    /// and a path that might not exist would make that a lie.
+    ///
+    /// # Errors
+    ///
+    /// None — this is infallible on purpose. See above.
+    #[must_use]
+    pub fn spawn_sidecar(app_name: &str, state: Arc<T>) -> Option<PathBuf> {
+        let (tx, rx) = std::sync::mpsc::channel::<Option<PathBuf>>();
+        let app = app_name.to_owned();
+
+        let spawned = std::thread::Builder::new()
+            .name("kanshou".into())
+            .spawn(move || {
+                let rt = match tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .thread_name("kanshou-tokio")
+                    .build()
+                {
+                    Ok(rt) => rt,
+                    Err(e) => {
+                        tracing::warn!(err = %e, "could not create kanshou tokio runtime");
+                        let _ = tx.send(None);
+                        return;
+                    }
+                };
+                rt.block_on(async move {
+                    // Inside the runtime: bind is legal here and nowhere else.
+                    let server = match Self::new(&app, state) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            tracing::warn!(
+                                app = %app,
+                                err = %e,
+                                "kanshou bind failed; introspection disabled",
+                            );
+                            let _ = tx.send(None);
+                            return;
+                        }
+                    };
+                    let _ = tx.send(Some(server.socket_path().to_path_buf()));
+                    if let Err(e) = server.serve().await {
+                        tracing::warn!(err = %e, "kanshou server exited with error");
+                    }
+                });
+            });
+
+        if let Err(e) = spawned {
+            // THE DIVERGENCE, RESOLVED. This was `.expect()` in two of the
+            // three copies. A sidecar that cannot start is not a reason to
+            // kill the application it is meant to observe.
+            tracing::warn!(
+                app = app_name,
+                err = %e,
+                "could not spawn the kanshou thread; introspection disabled",
+            );
+            return None;
+        }
+
+        // The thread always sends exactly once before serving, so this is a
+        // bounded wait. A RecvError means the thread died before reporting —
+        // treated as "no introspection", never as a reason to fail.
+        rx.recv().unwrap_or(None)
+    }
+
     /// Run the accept loop indefinitely. Each accepted connection is
     /// handled in its own tokio task — the loop returns to accept the
     /// next client without blocking. Errors during accept are
@@ -124,5 +232,57 @@ async fn handle_connection<T: Introspect>(
             .await?;
         stream.write_all(&resp_bytes).await?;
         stream.flush().await?;
+    }
+}
+
+#[cfg(test)]
+mod sidecar_tests {
+    use super::*;
+    use crate::types::{Query, QueryError, QueryResult};
+
+    struct Probe;
+    impl Introspect for Probe {
+        fn query(&self, _q: &Query) -> QueryResult {
+            Err(QueryError::unknown_method("probe"))
+        }
+    }
+
+    /// **THE CONTRACT, AND THE DIVERGENCE IT RESOLVES.**
+    ///
+    /// A sidecar that cannot start must never take the application with it.
+    /// Two of the three hand-rolled copies this method replaced ended their
+    /// spawn with `.expect(...)` while their own doc comment promised
+    /// best-effort degradation — so under thread-spawn `EAGAIN` a missing
+    /// debug socket killed the terminal and the multiplexer daemon.
+    ///
+    /// There is no arm of `spawn_sidecar` that can panic. This exercises the
+    /// success path; the failure paths are unreachable without exhausting
+    /// threads, and are `return None` by construction rather than by policy.
+    #[test]
+    fn spawning_a_sidecar_returns_a_bound_path_and_never_panics() {
+        let app = format!("kanshou-test-{}", std::process::id());
+        let path = Server::spawn_sidecar(&app, Arc::new(Probe));
+        let path = path.expect("bind should succeed in a test environment");
+        // The bind happened on THIS thread before the spawn, so a returned
+        // path means the socket exists — not merely that a thread started.
+        assert!(
+            path.exists(),
+            "spawn_sidecar returned {} but nothing is there — the path must \
+             be bound before it is handed back, because callers announce it \
+             as `introspection live`",
+            path.display(),
+        );
+        let _ = std::fs::remove_file(&path);
+    }
+
+    /// Two apps do not collide: the socket path carries the app name and pid.
+    #[test]
+    fn two_apps_get_distinct_sockets() {
+        let a = Server::spawn_sidecar(&format!("kt-a-{}", std::process::id()), Arc::new(Probe));
+        let b = Server::spawn_sidecar(&format!("kt-b-{}", std::process::id()), Arc::new(Probe));
+        let (a, b) = (a.expect("a binds"), b.expect("b binds"));
+        assert_ne!(a, b);
+        let _ = std::fs::remove_file(&a);
+        let _ = std::fs::remove_file(&b);
     }
 }
