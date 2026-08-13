@@ -9,6 +9,27 @@ use std::path::PathBuf;
 /// - linux: `$XDG_RUNTIME_DIR/kanshou` if set, else `/tmp/kanshou-<uid>`
 ///
 /// The directory is created on demand; existing dir + perms preserved.
+/// Accept a directory override only when it is ABSOLUTE.
+///
+/// Every arm below used to take its environment variable on trust. A relative
+/// or empty value then made the whole socket directory relative to the
+/// process's cwd, which for a DISCOVERY mechanism is the worst possible
+/// failure: a GUI started from `$HOME` and an MCP server started from a repo
+/// each bind a different directory, each sees zero peers, and both report
+/// themselves perfectly healthy. Nothing errors — they simply never meet.
+///
+/// `$HOME` unset made this reachable on macOS too, not just via a hostile
+/// variable: `var_os("HOME").unwrap_or_default()` yields an empty path, and
+/// pushing onto it gives the relative `Library/Application Support/kanshou`.
+fn absolute(value: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    let p = PathBuf::from(value?);
+    if p.is_absolute() && !p.as_os_str().is_empty() {
+        Some(p)
+    } else {
+        None
+    }
+}
+
 #[must_use]
 pub fn socket_dir() -> PathBuf {
     // Test/CI hermeticity seam: a process that must never discover
@@ -16,25 +37,25 @@ pub fn socket_dir() -> PathBuf {
     // at a private dir. Without it, a test suite running while the
     // real GUI is open forwards queries to the operator's session —
     // the mado mcp_config_get flake class (2026-06-11).
-    if let Some(dir) = std::env::var_os("KANSHOU_SOCKET_DIR") {
-        return PathBuf::from(dir);
+    if let Some(dir) = absolute(std::env::var_os("KANSHOU_SOCKET_DIR")) {
+        return dir;
     }
     if cfg!(target_os = "macos") {
-        let home = std::env::var_os("HOME").unwrap_or_default();
-        let mut p = PathBuf::from(home);
-        p.push("Library/Application Support/kanshou");
-        p
-    } else {
-        if let Some(xdg) = std::env::var_os("XDG_RUNTIME_DIR") {
-            let mut p = PathBuf::from(xdg);
-            p.push("kanshou");
+        if let Some(mut p) = absolute(std::env::var_os("HOME")) {
+            p.push("Library/Application Support/kanshou");
             return p;
         }
-        // Fallback per-UID to avoid socket squatting on shared /tmp.
-        let uid =
-            unsafe { libc_geteuid() }.unwrap_or(0);
-        PathBuf::from(format!("/tmp/kanshou-{uid}"))
+    } else if let Ok(base) = okiba::Okiba::for_app("kanshou").base(okiba::Tier::Runtime) {
+        // okiba applies the same absolute-only rule to $XDG_RUNTIME_DIR, and
+        // returns NoSpecDefault rather than inventing a home-relative
+        // fallback — the replacement below is kanshou's to choose.
+        return base.join("kanshou");
     }
+    // Per-UID, to avoid socket squatting on a shared /tmp. Absolute by
+    // construction, so it is also the safe landing spot for every arm above
+    // that declined a non-absolute value.
+    let uid = unsafe { libc_geteuid() }.unwrap_or(0);
+    PathBuf::from(format!("/tmp/kanshou-{uid}"))
 }
 
 /// Canonical socket path for an app+pid pair.
@@ -87,6 +108,36 @@ unsafe fn libc_geteuid() -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The rule, in isolation: only an absolute value is accepted. Everything
+    /// else is DECLINED so the caller falls through to a known-absolute
+    /// replacement, rather than silently resolved against the cwd.
+    #[test]
+    fn only_absolute_overrides_are_accepted() {
+        for bad in ["", ".", "relative/run", "run/user/1000"] {
+            assert_eq!(
+                absolute(Some(bad.into())),
+                None,
+                "{bad:?} must be declined, not joined"
+            );
+        }
+        assert_eq!(
+            absolute(Some("/run/user/1000".into())),
+            Some(PathBuf::from("/run/user/1000"))
+        );
+        assert_eq!(absolute(None), None);
+    }
+
+    /// THE invariant, whatever this machine's environment happens to say. A
+    /// relative socket directory means two kanshou peers started from
+    /// different working directories never discover each other, while both
+    /// report themselves healthy — so the absoluteness is the load-bearing
+    /// property, not the particular directory chosen.
+    #[test]
+    fn the_socket_dir_is_always_absolute() {
+        assert!(socket_dir().is_absolute(), "{:?}", socket_dir());
+        assert!(socket_path("mado", 1234).is_absolute());
+    }
 
     #[test]
     fn socket_dir_env_override_wins() {

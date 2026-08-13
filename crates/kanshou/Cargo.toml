@@ -24,6 +24,12 @@ default = ["derive"]
 derive = ["dep:kanshou-derive"]
 
 [dependencies]
+# okiba (置き場) — XDG resolution where a RELATIVE or empty override is IGNORED
+# per spec rather than joined. socket_dir() used to trust $XDG_RUNTIME_DIR
+# verbatim, so an empty one made the SOCKET DIRECTORY cwd-relative and two
+# kanshou peers started from different directories could never discover each
+# other.
+okiba = "0.2"
 tokio = { version = "1", features = ["net", "io-util", "sync", "rt", "macros", "time"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

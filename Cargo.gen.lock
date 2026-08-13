@@ -1,10 +1,10 @@
 {
   "schema_version": 2,
-  "cargo_lock_sha256": "36afb5e21db680a7a57e74ceaa157fd05902acccb7d1bc02e7d8298db807934d",
+  "cargo_lock_sha256": "9159e38cbbefbc2bac4edc86b56682e0b1e7e6affa7911cc3a3d82f872b9cacb",
   "manifest_sha256": {
     "Cargo.toml": "80ce1ce86bcaf79a9422915356af84d89bcaa74d19b28806841a27ad6561c70e",
     "crates/kanshou-derive/Cargo.toml": "f81c7592634bd1a5949ea7065c123c972d8fdee0b5096b614b59d45830b39a6c",
-    "crates/kanshou/Cargo.toml": "e1c6189ec725efe7107d710f40b4b11a2584bd6ad094949420263ebca98514e2"
+    "crates/kanshou/Cargo.toml": "304147d96491652c1fc9dda11aa322573c7073271d1abf4166e998d9c4786628"
   },
   "target_resolves": {
     "base": {
@@ -190,6 +190,16 @@
             "tree": "host"
           },
           {
+            "name": "okiba",
+            "package_key": "okiba-0.2.1",
+            "kind": "normal",
+            "features": [],
+            "uses_default_features": true,
+            "optional": false,
+            "target": null,
+            "tree": "target"
+          },
+          {
             "name": "serde",
             "package_key": "serde-1.0.228",
             "kind": "normal",
@@ -347,6 +357,11 @@
           "os-ext",
           "os-poll"
         ]
+      },
+      "okiba-0.2.1": {
+        "runtime_dependencies": [],
+        "build_dependencies": [],
+        "features": []
       },
       "once_cell-1.21.4": {
         "runtime_dependencies": [],
@@ -1787,6 +1802,9 @@
     },
     "mio-1.2.1": {
       "edition": "2021"
+    },
+    "okiba-0.2.1": {
+      "edition": "2024"
     },
     "once_cell-1.21.4": {
       "edition": "2021"

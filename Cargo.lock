@@ -117,6 +117,7 @@ name = "kanshou"
 version = "0.1.5"
 dependencies = [
  "kanshou-derive",
+ "okiba",
  "serde",
  "serde_json",
  "tempfile",
@@ -183,6 +184,12 @@ dependencies = [
  "wasi",
  "windows-sys",
 ]
+
+[[package]]
+name = "okiba"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb7f9cb9982c5086e786c73b7c5dcca67937ffede389cc9c92928a7ab5b01148"
 
 [[package]]
 name = "once_cell"
