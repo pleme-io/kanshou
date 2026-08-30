@@ -15,13 +15,10 @@ struct TestState {
 impl Introspect for TestState {
     fn query(&self, q: &Query) -> QueryResult {
         match q.path.as_slice() {
-            [first] if first == "sessions" => {
-                Ok(serde_json::to_value(&self.sessions).unwrap())
+            [first] if first == "sessions" => Ok(serde_json::to_value(&self.sessions).unwrap()),
+            [first] if first == "frame_count" => {
+                Ok(serde_json::to_value(self.frame_count.load(Ordering::Relaxed)).unwrap())
             }
-            [first] if first == "frame_count" => Ok(serde_json::to_value(
-                self.frame_count.load(Ordering::Relaxed),
-            )
-            .unwrap()),
             _ => Err(QueryError::unknown_field(q.path.join("."))),
         }
     }
@@ -95,10 +92,13 @@ async fn end_to_end_query_roundtrip() {
 #[tokio::test]
 async fn socket_path_matches_canonical_layout() {
     let app_name = format!("kanshou-test-path-{}", std::process::id());
-    let server = Server::new(&app_name, Arc::new(TestState {
-        sessions: vec![],
-        frame_count: AtomicU64::new(0),
-    }))
+    let server = Server::new(
+        &app_name,
+        Arc::new(TestState {
+            sessions: vec![],
+            frame_count: AtomicU64::new(0),
+        }),
+    )
     .expect("bind");
     let expected = socket_path(&app_name, std::process::id());
     assert_eq!(server.socket_path(), expected.as_path());
@@ -108,10 +108,13 @@ async fn socket_path_matches_canonical_layout() {
 #[tokio::test]
 async fn discover_finds_the_running_server() {
     let app_name = format!("kanshou-test-disc-{}", std::process::id());
-    let server = Server::new(&app_name, Arc::new(TestState {
-        sessions: vec![],
-        frame_count: AtomicU64::new(0),
-    }))
+    let server = Server::new(
+        &app_name,
+        Arc::new(TestState {
+            sessions: vec![],
+            frame_count: AtomicU64::new(0),
+        }),
+    )
     .expect("bind");
     let _path = server.socket_path().to_path_buf();
     let server_task = tokio::spawn(async move {

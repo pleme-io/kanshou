@@ -37,6 +37,23 @@ impl<T: Introspect + 'static> Server<T> {
         // surface the error.
         let _ = std::fs::remove_file(&path);
         let listener = UnixListener::bind(&path)?;
+
+        // ── ★ REAP THIS APP'S OWN DEAD SOCKETS ──────────────────────────────
+        //
+        // Nothing unlinks on exit, because a crashed or SIGKILLed process
+        // cannot. Measured on plo 2026-08-29: `/tmp/kanshou-1001` held 94
+        // sockets of which ONE had a living process. A caller that trusts the
+        // directory sees 94 peers and gets ECONNREFUSED from 93 — an error
+        // shaped like a broken service rather than a dead one.
+        //
+        // Scoped to THIS app name deliberately. Reaping every app's sockets
+        // from one process's bind would make a short-lived tool the janitor
+        // for daemons it knows nothing about, and a pid check that raced a
+        // just-starting peer would delete a live socket. Own only your own.
+        let reaped = crate::client::reap_stale(Some(app_name));
+        if reaped > 0 {
+            tracing::debug!(app = app_name, reaped, "kanshou: removed stale sockets");
+        }
         Ok(Self {
             state,
             listener,
@@ -228,7 +245,11 @@ async fn handle_connection<T: Introspect>(
         });
 
         stream
-            .write_all(&u32::try_from(resp_bytes.len()).unwrap_or(u32::MAX).to_be_bytes())
+            .write_all(
+                &u32::try_from(resp_bytes.len())
+                    .unwrap_or(u32::MAX)
+                    .to_be_bytes(),
+            )
             .await?;
         stream.write_all(&resp_bytes).await?;
         stream.flush().await?;

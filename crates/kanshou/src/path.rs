@@ -58,6 +58,81 @@ pub fn socket_dir() -> PathBuf {
     PathBuf::from(format!("/tmp/kanshou-{uid}"))
 }
 
+/// Every directory a kanshou socket may live in on this host, canonical first.
+///
+/// ── ★ WHY THE READ PATH IS PLURAL WHEN THE WRITE PATH IS SINGULAR ──────────
+///
+/// `socket_dir()` answers "where do *I* bind" and must stay one answer.
+/// Discovery asks a different question — "where might a PEER have bound" — and
+/// on a real host that is genuinely more than one place, because the answer
+/// depends on an environment variable each process inherits separately.
+///
+/// Measured on plo 2026-08-29, and it is not a corner case:
+///
+/// ```text
+///   /run/user/1001/kanshou   frost, mado, omoya, tear-daemon, tend   (5 live)
+///   /tmp/kanshou-1001        94 sockets, 1 live
+///   /tmp/kanshou-0           sentinela
+/// ```
+///
+/// omoya inherits `XDG_RUNTIME_DIR` from its session and binds under the
+/// runtime dir; processes started without it land in `/tmp`. A client resolving
+/// ONE directory sees a fraction of the fleet and reports the rest as absent —
+/// which is exactly the failure this module's header already warned about
+/// ("each sees zero peers … both report themselves perfectly healthy"). The
+/// warning was right; the read path just never acted on it.
+///
+/// ★ TRANSITION-ONLY. The legacy `/tmp` arm exists so a fleet mid-rollout stays
+/// discoverable. Once every writer agrees on the runtime dir it can be dropped,
+/// and `dirs.len() == 1` is the signal that the migration is finished.
+#[must_use]
+pub fn socket_dirs() -> Vec<PathBuf> {
+    let mut dirs = vec![socket_dir()];
+    // The legacy per-uid /tmp location, added only when it is not already the
+    // canonical answer (which it is whenever XDG_RUNTIME_DIR is unset).
+    if let Some(uid) = unsafe { libc_geteuid() } {
+        let legacy = PathBuf::from(format!("/tmp/kanshou-{uid}"));
+        if !dirs.contains(&legacy) {
+            dirs.push(legacy);
+        }
+    }
+    dirs
+}
+
+/// Is `pid` a live process?
+///
+/// ★ Discovery without this is misleading rather than merely noisy: on plo
+/// `/tmp/kanshou-1001` holds 94 sockets of which ONE has a living process. A
+/// caller that trusts the directory listing sees 94 peers and gets
+/// `ECONNREFUSED` from 93 of them — an error that reads like a broken service
+/// rather than a dead one.
+#[must_use]
+pub fn pid_is_live(pid: u32) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        // /proc is authoritative and needs no permission to stat.
+        return std::path::Path::new(&format!("/proc/{pid}")).exists();
+    }
+    #[cfg(all(unix, not(target_os = "linux")))]
+    {
+        // `kill(pid, 0)` probes existence without delivering a signal. EPERM
+        // means the process EXISTS and is not ours — still live.
+        unsafe extern "C" {
+            fn kill(pid: i32, sig: i32) -> i32;
+        }
+        let Ok(p) = i32::try_from(pid) else {
+            return false;
+        };
+        // EPERM (1) means the process EXISTS and is not ours — still live.
+        (unsafe { kill(p, 0) }) == 0 || std::io::Error::last_os_error().raw_os_error() == Some(1)
+    }
+    #[cfg(not(unix))]
+    {
+        let _ = pid;
+        true
+    }
+}
+
 /// Canonical socket path for an app+pid pair.
 #[must_use]
 pub fn socket_path(app_name: &str, pid: u32) -> PathBuf {
@@ -105,6 +180,26 @@ unsafe fn libc_geteuid() -> Option<u32> {
     }
 }
 
+/// Serialises every test that mutates `KANSHOU_SOCKET_DIR`.
+///
+/// ★ Env vars are PROCESS-global and cargo runs tests in parallel, so one test
+/// pointing discovery at a scratch directory silently redirects every other
+/// test's discovery for the duration. Measured here: adding
+/// `discovery_is_side_effect_free` made `mcp::forward_hits_live_consumer` fail
+/// with `left: "fallback", right: "live"` -- it discovered in the scratch dir,
+/// found no consumer, and fell back. The failure names neither the env var nor
+/// the other test, which is what makes this class expensive.
+#[cfg(test)]
+pub(crate) static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// Take `ENV_LOCK`, surviving a poisoned mutex from an unrelated panic.
+#[cfg(test)]
+pub(crate) fn env_guard() -> std::sync::MutexGuard<'static, ()> {
+    ENV_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -141,6 +236,7 @@ mod tests {
 
     #[test]
     fn socket_dir_env_override_wins() {
+        let _g = super::env_guard();
         unsafe { std::env::set_var("KANSHOU_SOCKET_DIR", "/tmp/kanshou-test-override") };
         assert_eq!(
             socket_dir(),

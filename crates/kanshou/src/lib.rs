@@ -83,7 +83,7 @@ pub mod path;
 pub mod server;
 pub mod types;
 
-pub use client::{discover, Client, DiscoveredInstance};
+pub use client::{Client, DiscoveredInstance, discover};
 pub use server::Server;
 pub use types::{Introspect, Query, QueryError, QueryResult};
 

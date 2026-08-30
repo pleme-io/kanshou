@@ -83,9 +83,7 @@ fn derive_nested_walk() {
         serde_json::json!({ "shell": "frostmourne", "width": 132 })
     );
     // ["config", "shell"] → walks into the nested Introspect
-    let inner = state
-        .query(&Query::field(["config", "shell"]))
-        .unwrap();
+    let inner = state.query(&Query::field(["config", "shell"])).unwrap();
     assert_eq!(inner, serde_json::json!("frostmourne"));
 }
 
@@ -118,9 +116,7 @@ fn derive_rename() {
         renamed_field: 7,
     };
     // Querying the Rust name fails (renamed away).
-    let err = state
-        .query(&Query::field(["renamed_field"]))
-        .unwrap_err();
+    let err = state.query(&Query::field(["renamed_field"])).unwrap_err();
     assert!(matches!(err, QueryError::UnknownField { .. }));
     // The wire name resolves.
     let v = state.query(&Query::field(["wire-name"])).unwrap();

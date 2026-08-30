@@ -8,7 +8,7 @@
 
 use std::path::Path;
 
-use crate::client::{discover, Client};
+use crate::client::{Client, discover};
 use crate::types::{Query, QueryError, QueryResult};
 
 /// Discover the most-recent live consumer of `app_name`, ship the
@@ -85,11 +85,7 @@ pub enum ForwardOutcome {
 /// Like [`forward`] but returns a tagged outcome so the caller can
 /// embed provenance in its response. Useful for MCP tools where the
 /// agent operator wants to know whether the data is live or stale.
-pub async fn forward_status<F>(
-    app_name: &str,
-    q: &Query,
-    fallback: F,
-) -> ForwardOutcome
+pub async fn forward_status<F>(app_name: &str, q: &Query, fallback: F) -> ForwardOutcome
 where
     F: FnOnce() -> QueryResult,
 {
@@ -103,13 +99,13 @@ where
                 return ForwardOutcome::Live {
                     pid: target.pid,
                     value,
-                }
+                };
             }
             Ok(Err(error)) => {
                 return ForwardOutcome::LiveError {
                     pid: target.pid,
                     error,
-                }
+                };
             }
             Err(e) => {
                 tracing::debug!(
@@ -122,10 +118,7 @@ where
     }
     match fallback() {
         Ok(value) => ForwardOutcome::Fallback { value },
-        Err(error) => ForwardOutcome::LiveError {
-            pid: 0,
-            error,
-        },
+        Err(error) => ForwardOutcome::LiveError { pid: 0, error },
     }
 }
 
