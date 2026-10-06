@@ -99,6 +99,32 @@ pub fn socket_dirs() -> Vec<PathBuf> {
     dirs
 }
 
+pub(crate) const BIND_GRACE: std::time::Duration = std::time::Duration::from_secs(10);
+
+#[must_use]
+pub fn socket_is_served(pid: u32, socket: &std::path::Path) -> bool {
+    socket_is_served_with_grace(pid, socket, BIND_GRACE)
+}
+
+pub(crate) fn socket_is_served_with_grace(
+    pid: u32,
+    socket: &std::path::Path,
+    grace: std::time::Duration,
+) -> bool {
+    pid_is_live(pid) && !refuses_connections(socket, grace)
+}
+
+fn refuses_connections(socket: &std::path::Path, grace: std::time::Duration) -> bool {
+    match std::os::unix::net::UnixStream::connect(socket) {
+        Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => std::fs::symlink_metadata(socket)
+            .and_then(|m| m.modified())
+            .ok()
+            .and_then(|t| t.elapsed().ok())
+            .is_some_and(|age| age >= grace),
+        _ => false,
+    }
+}
+
 /// Is `pid` a live process?
 ///
 /// ★ Discovery without this is misleading rather than merely noisy: on plo

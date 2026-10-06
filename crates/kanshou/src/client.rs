@@ -21,7 +21,8 @@ pub struct DiscoveredInstance {
     pub app_name: String,
     pub pid: u32,
     pub socket_path: PathBuf,
-    /// Whether the owning process still exists.
+    /// Whether a process is still serving this socket: its pid exists AND the
+    /// socket accepts a connection (a recycled pid alone does not count).
     ///
     /// ★ Carried rather than filtered so a caller can tell "no such app" from
     /// "the app died and left its socket" — two answers that a pre-filtered
@@ -77,6 +78,14 @@ pub fn discover_all(app_name: Option<&str>) -> Vec<DiscoveredInstance> {
 /// instead of guarding it, which is the better answer to both problems.
 #[must_use]
 pub fn discover_all_in(dirs: &[PathBuf], app_name: Option<&str>) -> Vec<DiscoveredInstance> {
+    discover_all_in_with_grace(dirs, app_name, crate::path::BIND_GRACE)
+}
+
+fn discover_all_in_with_grace(
+    dirs: &[PathBuf],
+    app_name: Option<&str>,
+    grace: std::time::Duration,
+) -> Vec<DiscoveredInstance> {
     let mut out: Vec<DiscoveredInstance> = Vec::new();
     let mut seen: std::collections::HashSet<(String, u32)> = std::collections::HashSet::new();
     // Canonical-first, and first-wins is what makes the canonical directory
@@ -103,7 +112,7 @@ pub fn discover_all_in(dirs: &[PathBuf], app_name: Option<&str>) -> Vec<Discover
                 app_name: app,
                 pid,
                 socket_path: e.path(),
-                live: crate::path::pid_is_live(pid),
+                live: crate::path::socket_is_served_with_grace(pid, &e.path(), grace),
             });
         }
     }
@@ -128,7 +137,15 @@ pub fn reap_stale(app_name: Option<&str>) -> usize {
 /// `reap_stale` over an EXPLICIT directory list. See `discover_all_in`.
 #[must_use]
 pub fn reap_stale_in(dirs: &[PathBuf], app_name: Option<&str>) -> usize {
-    discover_all_in(dirs, app_name)
+    reap_stale_in_with_grace(dirs, app_name, crate::path::BIND_GRACE)
+}
+
+fn reap_stale_in_with_grace(
+    dirs: &[PathBuf],
+    app_name: Option<&str>,
+    grace: std::time::Duration,
+) -> usize {
+    discover_all_in_with_grace(dirs, app_name, grace)
         .into_iter()
         .filter(|i| !i.live)
         .filter(|i| std::fs::remove_file(&i.socket_path).is_ok())
@@ -270,6 +287,42 @@ mod discovery_reach_tests {
         // Reaping is what removes it, and only when asked.
         assert_eq!(reap_stale_in(&dirs, Some("ghost")), 1);
         assert!(!stale.exists(), "reap_stale must remove a dead socket");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_recycled_pid_does_not_keep_a_dead_socket_alive() {
+        let dir = std::env::temp_dir().join(format!("kanshou-recycled-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let pid = std::process::id();
+        let dead = dir.join(format!("recycled-{pid}.sock"));
+        drop(std::os::unix::net::UnixListener::bind(&dead).expect("bind"));
+        let dirs = vec![dir.clone()];
+
+        assert!(discover_all_in(&dirs, Some("recycled"))[0].live);
+        assert_eq!(reap_stale_in(&dirs, Some("recycled")), 0);
+        assert!(dead.exists());
+
+        let zero = std::time::Duration::ZERO;
+        assert!(!discover_all_in_with_grace(&dirs, Some("recycled"), zero)[0].live);
+        assert_eq!(reap_stale_in_with_grace(&dirs, Some("recycled"), zero), 1);
+        assert!(!dead.exists());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn a_served_socket_is_never_reaped() {
+        let dir = std::env::temp_dir().join(format!("kanshou-served-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).expect("dir");
+        let sock = dir.join(format!("served-{}.sock", std::process::id()));
+        let _listener = std::os::unix::net::UnixListener::bind(&sock).expect("bind");
+        let dirs = vec![dir.clone()];
+        let zero = std::time::Duration::ZERO;
+        assert!(discover_all_in_with_grace(&dirs, Some("served"), zero)[0].live);
+        assert_eq!(reap_stale_in_with_grace(&dirs, Some("served"), zero), 0);
+        assert!(sock.exists());
         std::fs::remove_dir_all(&dir).ok();
     }
 }
