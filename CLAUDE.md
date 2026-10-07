@@ -5,11 +5,18 @@ that closes the "MCP server has no wire into the live GUI/daemon" class.
 
 ## Layout
 
+A two-member workspace: `crates/kanshou` (the library) and
+`crates/kanshou-derive` (`#[derive(Introspect)]`, re-exported by the
+library under its default `derive` feature). Inside `crates/kanshou`:
+
 - `src/lib.rs` — module index, re-exports
 - `src/types.rs` — `Introspect` trait, `Query`, `QueryResult`, `QueryError`
 - `src/path.rs` — canonical socket path resolution (darwin + linux)
 - `src/server.rs` — `Server<T: Introspect>`, accept loop, per-connection handler
 - `src/client.rs` — `discover()`, `Client::connect`, `Client::query`
+- `src/mcp.rs` — forward an MCP tool's query to the live consumer
+- `src/metrics.rs` — `Counter`, `Gauge`, `LogHistogram`, `Family` and
+  `metric_labels!`: the values a consumer exports through `Introspect`
 - `tests/roundtrip.rs` — end-to-end server↔client query test
 
 ## Wire protocol
@@ -30,9 +37,9 @@ bytes. Request: serialized `Query`. Response: serialized `QueryResult`.
 
 ## Conventions
 
-- Single crate (not a workspace). Three sibling modules.
-- No new typed primitives until phase 2's derive lands — the trait is
-  the only abstraction this crate owns.
+- Two typed surfaces: the `Introspect` trait (how a process answers) and
+  `metrics` (what it answers with). A metric type joins `metrics` only
+  when it is lock-free to record and `const`-constructible.
 - `#[derive(Serialize, Deserialize)]` on every wire type — wire shape
   is the API.
 - Each test creates a per-test-process socket name (`kanshou-test-<pid>`)

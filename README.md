@@ -98,6 +98,43 @@ because `tokio::net::UnixListener::bind` panics outside a runtime. A first draft
 bound eagerly on the calling thread and paniced in every caller; the test caught
 it.
 
+## Metrics
+
+What a consumer exports through its `Introspect` surface, so every
+binary's counters, gauges and latency distributions read the same way:
+
+```rust
+use kanshou::metrics::{Counter, Family, Gauge, LogHistogram};
+
+kanshou::metric_labels! {
+    pub enum Reason { Content = "content", Scrub = "scrub" }
+}
+
+static PAINTS: Family<Reason, { Reason::COUNT }> = Family::new();
+static QUEUE: Gauge = Gauge::new();
+static KEY_TO_PRESENT_US: LogHistogram = LogHistogram::new();
+static DROPPED: Counter = Counter::new();
+
+PAINTS.inc(Reason::Content);
+QUEUE.add(1);
+KEY_TO_PRESENT_US.record(850);
+let json = serde_json::to_value(&KEY_TO_PRESENT_US)?;
+```
+
+- `Counter` — a monotonic `u64`.
+- `Gauge` — a signed level that also keeps its peak, for queue depths.
+- `LogHistogram` — log-linear buckets, 16 per power of two, so values
+  below 32 are exact and every other value lands in a bucket at most
+  1/16 of its size wide. It serialises to count, sum, min, max, p50, p90,
+  p99 and the non-empty buckets as `[upper_bound, count]`, which is
+  enough to recompute any quantile or bootstrap an A/B offline.
+- `Family<L, N>` — one counter per variant of a `metric_labels!` enum;
+  a `Family` narrower or wider than its label set does not construct.
+
+Every record is a handful of relaxed atomic adds — no lock, no
+allocation — and every type is `const`-constructible, so the usual home
+for one is a `static`.
+
 ## Canonical socket path
 
 - macOS: `$HOME/Library/Application Support/kanshou/<app>-<pid>.sock`

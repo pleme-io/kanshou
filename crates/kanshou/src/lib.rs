@@ -13,7 +13,7 @@
 //! embedded tear sees one, "is tend processing X right now?" requiring
 //! `pgrep + lsof` archaeology.
 //!
-//! ## Three modules
+//! ## Modules
 //!
 //! - [`types`] — wire schema (`Query`, `QueryResult`, `Introspect`
 //!   trait). Stable serde shape.
@@ -22,6 +22,13 @@
 //!   canonical path and accepts queries.
 //! - [`client`] — [`Client`](client::Client) + [`discover`](client::discover).
 //!   Connect to a running binary by name+pid or auto-discover.
+//! - [`mcp`] — forward an MCP tool's query to the live consumer.
+//! - [`path`] — the canonical socket directories.
+//! - [`metrics`] — the values a consumer exports through its
+//!   `Introspect` surface: `Counter`, `Gauge`, a lock-free log-linear
+//!   `LogHistogram`, and `Family`, one counter per variant of a
+//!   [`metric_labels!`] enum. Recording is a handful of relaxed atomic
+//!   adds; every type serialises to the JSON a query answers with.
 //!
 //! ## Canonical socket path
 //!
@@ -79,6 +86,7 @@
 
 pub mod client;
 pub mod mcp;
+pub mod metrics;
 pub mod path;
 pub mod server;
 pub mod types;
