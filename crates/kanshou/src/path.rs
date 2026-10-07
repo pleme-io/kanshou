@@ -116,11 +116,13 @@ pub(crate) fn socket_is_served_with_grace(
 
 fn refuses_connections(socket: &std::path::Path, grace: std::time::Duration) -> bool {
     match std::os::unix::net::UnixStream::connect(socket) {
-        Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => std::fs::symlink_metadata(socket)
-            .and_then(|m| m.modified())
-            .ok()
-            .and_then(|t| t.elapsed().ok())
-            .is_some_and(|age| age >= grace),
+        Err(e) if e.kind() == std::io::ErrorKind::ConnectionRefused => {
+            std::fs::symlink_metadata(socket)
+                .and_then(|m| m.modified())
+                .ok()
+                .and_then(|t| t.elapsed().ok())
+                .is_some_and(|age| age >= grace)
+        }
         _ => false,
     }
 }

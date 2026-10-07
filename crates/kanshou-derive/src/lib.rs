@@ -54,7 +54,7 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parse_macro_input, Data, DeriveInput, Fields, Lit, Meta};
+use syn::{Data, DeriveInput, Fields, Lit, Meta, parse_macro_input};
 
 /// Auto-implement `kanshou::Introspect` for a struct with named
 /// `pub` fields. See module docs for attribute reference.
@@ -168,7 +168,9 @@ fn parse_field_attrs(attrs: &[syn::Attribute]) -> FieldAttrs {
         if !attr.path().is_ident("introspect") {
             continue;
         }
-        let Meta::List(list) = &attr.meta else { continue };
+        let Meta::List(list) = &attr.meta else {
+            continue;
+        };
         let _ = list.parse_nested_meta(|meta| {
             let Some(ident) = meta.path.get_ident() else {
                 return Ok(());
